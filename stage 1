@@ -1,0 +1,80 @@
+!pip install -q pandas numpy scikit-learn scipy ipywidgets openpyxl
+
+import pandas as pd
+import numpy as np
+from sklearn.linear_model import LinearRegression
+
+# Load uploaded file
+filename = list(uploaded.keys())[0]
+data = pd.read_excel(filename)
+
+# Preprocess data
+data.dropna(inplace=True)
+data['price_diff'] = data['price'] - data['competitor_price']
+
+# Train elasticity model
+X = data[['price_diff', 'price']]
+y = data['units_sold']
+reg = LinearRegression()
+reg.fit(X, y)
+
+print("✅ Model trained on uploaded data.")
+
+from scipy.optimize import minimize
+
+def predict_demand(price, price_diff):
+    """Predict demand from price and price difference."""
+    x_pred = np.array([[price_diff, price]])
+    return reg.predict(x_pred)[0]
+
+def revenue(price, *args):
+    """Objective function to maximize revenue."""
+    comp_price, cost_price, stock = args
+    price_diff = price - comp_price
+    demand = predict_demand(price, price_diff)
+    return -(price - cost_price) * min(demand, stock)
+
+import ipywidgets as widgets
+from IPython.display import display, clear_output
+
+# Input widgets
+current_price_input = widgets.FloatText(value=120.0, description='Current Price ($)')
+cost_price_input = widgets.FloatText(value=70.0, description='Cost Price ($)')
+competitor_price_input = widgets.FloatText(value=110.0, description='Competitor Price ($)')
+stock_input = widgets.IntText(value=500, description='Stock (units)')
+calculate_button = widgets.Button(description="🔍 Optimize Price", button_style='success')
+output_box = widgets.Output()
+
+# Callback function
+def on_button_click(b):
+    with output_box:
+        clear_output()
+        # Get values
+        current_price = current_price_input.value
+        cost_price = cost_price_input.value
+        comp_price = competitor_price_input.value
+        stock = stock_input.value
+        
+        # Optimize
+        result = minimize(
+            revenue,
+            x0=[current_price],
+            args=(comp_price, cost_price, stock),
+            bounds=[(cost_price * 1.05, current_price * 1.5)]
+        )
+        
+        optimal_price = result.x[0]
+        predicted_demand = predict_demand(optimal_price, optimal_price - comp_price)
+        est_revenue = (optimal_price - cost_price) * min(predicted_demand, stock)
+        
+        # Display
+        print("📈 Optimized Results:")
+        print(f"✅ Optimal Price: ${optimal_price:.2f}")
+        print(f"📊 Predicted Demand: {int(predicted_demand)} units")
+        print(f"💰 Estimated Revenue: ${est_revenue:.2f}")
+
+# Bind callback
+calculate_button.on_click(on_button_click)
+
+# Display UI
+display(current_price_input, cost_price_input, competitor_price_input, stock_input, calculate_button, output_box)
