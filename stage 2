@@ -1,0 +1,84 @@
+pip install pandas numpy scikit-learn scipy
+
+from google.colab import files
+uploaded = files.upload()
+
+import pandas as pd
+import numpy as np
+from sklearn.ensemble import GradientBoostingRegressor
+from sklearn.model_selection import train_test_split
+from sklearn.metrics import mean_squared_error
+from scipy.optimize import minimize
+
+# Simulate dataset
+np.random.seed(42)
+sample_data = pd.DataFrame({
+    "product_id": ["A123"] * 50,
+    "date": pd.date_range(start="2023-01-01", periods=50, freq="D"),
+    "price": np.random.randint(90, 130, size=50),
+    "competitor_price": np.random.randint(85, 125, size=50),
+    "units_sold": np.random.randint(200, 400, size=50),
+    "season": np.random.choice(["normal", "holiday", "peak"], size=50),
+    "stock": np.random.randint(300, 600, size=50),
+    "cost_price": [70] * 50
+})
+
+# One-hot encode season
+data = pd.get_dummies(sample_data, columns=['season'], drop_first=True)
+data['price_diff'] = data['price'] - data['competitor_price']
+
+# Features and target
+# Inspect the columns of the 'data' DataFrame after one-hot encoding
+# print(data.columns) # Uncomment this line to see the column names
+
+# Correct the features list based on the actual one-hot encoded columns
+# The columns will be 'season_normal' and 'season_peak' because drop_first=True
+features = ['price', 'competitor_price', 'price_diff', 'season_normal', 'season_peak']
+target = 'units_sold'
+
+# Train/test split
+X_train, X_test, y_train, y_test = train_test_split(data[features], data[target], test_size=0.2, random_state=42)
+model = GradientBoostingRegressor()
+model.fit(X_train, y_train)
+mse = mean_squared_error(y_test, model.predict(X_test))
+
+# Prediction function
+def predict_demand(price, comp_price, season_normal, season_peak):
+    price_diff = price - comp_price
+    x = pd.DataFrame([[price, comp_price, price_diff, season_normal, season_peak]], columns=features)
+    return model.predict(x)[0]
+
+# Revenue function
+def revenue(price, *args):
+    comp_price, cost_price, stock, season = args
+    season_normal = 1 if season == 'normal' else 0
+    season_peak = 1 if season == 'peak' else 0
+    demand = predict_demand(price, comp_price, season_normal, season_peak)
+    return -(price - cost_price) * min(demand, stock)
+
+# User input
+current_price = float(input("Enter current price: "))
+cost_price = float(input("Enter cost price: "))
+stock = int(input("Enter current stock: "))
+comp_price = float(input("Enter competitor price: "))
+season = input("Enter season (normal, holiday, peak): ").strip().lower() # Convert input to lowercase
+
+# Optimization
+result = minimize(
+    revenue,
+    x0=[current_price],
+    args=(comp_price, cost_price, stock, season),
+    bounds=[(cost_price * 1.05, current_price * 1.5)]
+)
+optimal_price = result.x[0]
+season_n = 1 if season == 'normal' else 0
+season_p = 1 if season == 'peak' else 0
+predicted_demand = predict_demand(optimal_price, comp_price, season_n, season_p)
+est_revenue = (optimal_price - cost_price) * min(predicted_demand, stock)
+
+# Display result
+print("\n📈 Advanced Optimization Results")
+print(f"✅ Optimal Price: ${optimal_price:.2f}")
+print(f"📊 Predicted Demand: {int(predicted_demand)} units")
+print(f"💰 Estimated Revenue: ${est_revenue:.2f}")
+print(f"📉 Model MSE: {mse:.2f}")
